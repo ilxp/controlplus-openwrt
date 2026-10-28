@@ -1,0 +1,85 @@
+name: Build Control Plus
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g., v1.0.0). Leave empty to skip release."
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.arch }}-${{ matrix.sdk }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch:
+          - x86_64
+        sdk:
+          - openwrt-24.10
+          - openwrt-25.12
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build Packages
+        uses: sbwml/openwrt-gh-action-sdk@go1.26
+        env:
+          ARCH: ${{ matrix.arch }}-${{ matrix.sdk }}
+          FEEDNAME: packages_ci
+          PACKAGES: "luci-app-controlplus"
+          NO_REFRESH_CHECK: true
+          #V: s  # 开启详细日志
+
+      - name: Create compress files
+        continue-on-error: true
+        run: |
+          if [ "${{ matrix.arch }}" = "riscv64_riscv64" ] && [ "${{ matrix.sdk }}" = "openwrt-25.12" ]; then
+            tar -zcvf Controlplus-${{ matrix.sdk }}-${{ matrix.arch }}.tar.gz -C bin/packages/riscv64_generic/ packages_ci
+          else
+            tar -zcvf Controlplus-${{ matrix.sdk }}-${{ matrix.arch }}.tar.gz -C bin/packages/${{ matrix.arch }}/ packages_ci
+          fi
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Controlplus-${{ matrix.sdk }}-${{ matrix.arch }}
+          path: "Controlplus-${{ matrix.sdk }}-${{ matrix.arch }}.tar.gz"
+
+  # ============================================================
+  # 独立的 Release 任务
+  # ============================================================
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    # 输入了 tag 时才执行
+    if: ${{ inputs.tag != '' }}
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Display files
+        run: ls -la artifacts/
+
+      - name: Release
+        uses: ncipollo/release-action@v1
+        with:
+          # 使用 inputs.tag 和 github.event.inputs.tag
+          tag: ${{ inputs.tag }}
+          name: ${{ inputs.tag }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          allowUpdates: true
+          replacesArtifacts: true
+          prerelease: false
+          artifacts: "artifacts/*.tar.gz"

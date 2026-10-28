@@ -1,0 +1,369 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: luci-app-controlplus 1.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-10-26 00:00+0000\n"
+"PO-Revision-Date: 2026-10-26 00:00+0000\n"
+"Last-Translator: Auto generated\n"
+"Language-Team: Chinese\n"
+"Language: zh-cn\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+# ==================== 菜单栏 (menu.d) ====================
+msgid "Control"
+msgstr "管控"
+
+msgid "Control Plus"
+msgstr "管控 Plus"
+
+msgid "Time Control"
+msgstr "时间限制"
+
+msgid "Protocol Control"
+msgstr "协议限制"
+
+msgid "Weburl Control"
+msgstr "网址过滤"
+
+msgid "QoS Control"
+msgstr "网络限速"
+
+msgid "MAC Access"
+msgstr "设备准入"
+
+# ==================== 基础通用 ====================
+msgid "Checking..."
+msgstr "检查中..."
+
+msgid "RUNNING"
+msgstr "运行中"
+
+msgid "NOT RUNNING"
+msgstr "未运行"
+
+msgid "Enable"
+msgstr "开启"
+
+msgid "Active"
+msgstr "生效"
+
+msgid "Remarks"
+msgstr "备注"
+
+msgid "Current Status"
+msgstr "当前状态"
+
+msgid "Every Day"
+msgstr "每天"
+
+msgid "Monday"
+msgstr "星期一"
+
+msgid "Tuesday"
+msgstr "星期二"
+
+msgid "Wednesday"
+msgstr "星期三"
+
+msgid "Thursday"
+msgstr "星期四"
+
+msgid "Friday"
+msgstr "星期五"
+
+msgid "Saturday"
+msgstr "星期六"
+
+msgid "Sunday"
+msgstr "星期日"
+
+msgid "Time format must be HH:MM"
+msgstr "时间格式必须为 HH:MM"
+
+msgid "Start Time"
+msgstr "起控时间"
+
+msgid "End Time"
+msgstr "停控时间"
+
+msgid "Week Day"
+msgstr "设定星期"
+
+# ==================== maclist.js ====================
+msgid "Control Plus - MAC Access"
+msgstr "管控 Plus - 准入控制"
+
+msgid "<b><font color=\"green\">MAC Black/White List: Low-level network access control.</font></b><br/><span style=\"color:red;\">Note: In whitelist mode, devices not in the list will be completely unable to access the Internet.</span>"
+msgstr "<b><font color=\"green\">MAC 黑白名单：底层网络级别的访问控制。</font></b><br/><span style=\"color:red;\">注意：白名单模式下，未加入列表的设备将完全无法上网。</span>"
+
+msgid "Access Mode"
+msgstr "准入模式"
+
+msgid "Blacklist: Devices in the list are prohibited from accessing the Internet.<br/>Whitelist: Only devices in the list are allowed to access the Internet, all others are blocked!"
+msgstr "黑名单：列表内的设备禁止上网。<br/>白名单：仅列表内的设备允许上网，其他全部拦截！"
+
+msgid "Blacklist Mode (Deny Access)"
+msgstr "黑名单模式 (禁止访问)"
+
+msgid "Whitelist Mode (Allow Access)"
+msgstr "白名单模式 (允许访问)"
+
+msgid "Device List"
+msgstr "设备列表"
+
+msgid "MAC Address"
+msgstr "MAC地址"
+
+# ==================== protocol.js ====================
+msgid "Control Plus - Protocol Filter"
+msgstr "管控 Plus - 协议过滤"
+
+msgid "<b><font color=\"green\">Protocol Filter: Control whether a specified MAC machine can use specific protocol ports.</font></b><br/>Ports can be a continuous range separated by a colon, e.g., 5000:5100, or multiple ports separated by commas, e.g., 5100,5110,5001:5002"
+msgstr "<b><font color=\"green\">协议过滤：可以控制指定MAC机器是否使用指定协议端口。</font></b><br/>端口可以是连续端口范围用冒号分隔如 5000:5100，或多个端口用逗号分隔如：5100,5110,5001:5002"
+
+msgid "Protocol Filter List"
+msgstr "协议过滤列表"
+
+msgid "Current Status"
+msgstr "当前状态"
+
+msgid "Checking..."
+msgstr "检查中..."
+
+msgid "RUNNING"
+msgstr "运行中"
+
+msgid "NOT RUNNING"
+msgstr "未运行"
+
+msgid "Enable"
+msgstr "启用"
+
+msgid "Remarks"
+msgstr "备注"
+
+msgid "MAC Address <font color=\"green\">(Leave blank for all clients)</font>"
+msgstr "MAC地址<font color=\"green\">(留空为全部客户端)</font>"
+
+msgid "Port Protocol"
+msgstr "端口协议"
+
+msgid "TCP"
+msgstr "TCP"
+msgid "UDP"
+msgstr "UDP"
+msgid "ICMP"
+msgstr "ICMP"
+msgid "TCP + UDP (Both)"
+msgstr "TCP + UDP (双协议)"
+
+msgid "Invalid port format. Only numbers, colons, and commas are allowed (no spaces)"
+msgstr "端口格式错误，只能输入数字、冒号、逗号（不能有空格）"
+
+msgid "Source Port"
+msgstr "源端口"
+msgid "e.g., 1024,5000:5100 (blank = any)"
+msgstr "例如：1024,5000:5100 (留空=任意)"
+
+msgid "Destination Port"
+msgstr "目的端口"
+msgid "e.g., 80,443,5000:5100"
+msgstr "例如：80,443,5000:5100"
+
+# 注意：这里的 HTML 标签必须完全保留，不能多一个空格或换行
+msgid "<span class=\"hide-in-table\"><b>Common ports:</b> 80=HTTP, 443=HTTPS, 22=SSH, 23=Telnet, 3389=RDP, 21=FTP, 25=SMTP, 110=POP3, 143=IMAP, 445=SMB, 53=DNS (TCP/UDP), 853=Encrypted DNS, 1723=PPTP, 20=UDP-FTP, 69=UDP-TFTP, 161=UDP-SNMP, 500=UDP-IPSEC, 1701=UDP-L2TP.</span>"
+msgstr "<span class=\"hide-in-table\"><b>常用端口：</b> 80=HTTP, 443=HTTPS, 22=SSH, 23=Telnet, 3389=远程桌面, 21=FTP, 25=邮件, 110=邮件, 143=邮件, 445=局域网共享, 53=域名解析, 853=加密DNS, 1723=VPN, 20=文件传输, 69=简单文件传输, 161=网络管理, 500=VPN, 1701=VPN.</span>"
+
+msgid "Time format must be HH:MM or HH:MM:SS"
+msgstr "时间格式必须为 HH:MM 或 HH:MM:SS"
+
+msgid "Start Time"
+msgstr "开始时间"
+
+msgid "End Time"
+msgstr "结束时间"
+
+msgid "Week Day"
+msgstr "设定星期"
+
+msgid "Every Day"
+msgstr "每天"
+msgid "Monday"
+msgstr "星期一"
+msgid "Tuesday"
+msgstr "星期二"
+msgid "Wednesday"
+msgstr "星期三"
+msgid "Thursday"
+msgstr "星期四"
+msgid "Friday"
+msgstr "星期五"
+msgid "Saturday"
+msgstr "星期六"
+msgid "Sunday"
+msgstr "星期日"
+
+# ==================== qos.js ====================
+msgid "Control Plus - Network Limit"
+msgstr "管控 Plus - 网络限速"
+
+msgid "<b><font color=\"green\">Network Limit: Limit the bandwidth of specific devices based on MAC address.</font></b><br/><span style=\"color:red;\">Note: You must disable \"Software/Hardware Flow Offloading\" in the firewall settings, otherwise the speed limit will not work!</span>"
+msgstr "<b><font color=\"green\">网络限速：基于 MAC 地址限制特定设备的带宽。</font></b><br/><span style=\"color:red;\">注意：必须关闭防火墙的“软件/硬件流量分载”，否则限速无效！</span>"
+
+msgid "Speed Limit List"
+msgstr "限速列表"
+
+msgid "Download Limit (KB/s)"
+msgstr "下载限速 (KB/s)"
+
+msgid "e.g., 1250 (approx. 10Mbps)"
+msgstr "例如: 1250 (约10Mbps)"
+
+msgid "Upload Limit (KB/s)"
+msgstr "上传限速 (KB/s)"
+
+msgid "e.g., 125"
+msgstr "例如: 125"
+
+# ==================== time.js ====================
+msgid "Control Plus - Time Limit"
+msgstr "管控 Plus - 时间限制"
+
+msgid "<b><font color=\"green\">Use nftables to control data packet filtering to prohibit users who meet the set conditions from connecting to the Internet.</font></b><br/>Time Limit: Restrict whether a specified MAC address machine can access the Internet.<br/>Leaving MAC blank means restricting all machines. Weekdays are represented by 1-7. For multiple days, use custom: 1,5 for Monday and Friday."
+msgstr "<b><font color=\"green\">利用 nftables 来管控数据包过滤以禁止符合设定条件的用户连接互联网。</font></b><br/>时间限制: 限制指定MAC地址机器是否联网。<br/>不指定MAC代表限制所有机器，星期用1-7表示，多个日期用自定义：1,5表示星期一和星期五。"
+
+msgid "Control Strength"
+msgstr "管控强度"
+
+msgid "Normal: Disconnect.<br/>Strict: Disconnect, and cannot connect to the router backend!"
+msgstr "普通管控：断网。<br/>强力管控：断网，且无法连接路由器后台！"
+
+msgid "Normal Control"
+msgstr "普通管控"
+
+msgid "Strict Control"
+msgstr "强力管控"
+
+msgid "Time Limit List"
+msgstr "时间限制列表"
+
+# ==================== weburl.js ====================
+msgid "Control Plus - Web URL Filter"
+msgstr "管控 Plus - 网址过滤"
+
+msgid "<b><font color=\"green\">Web URL Filter: Intercept via DNS resolution, perfectly supporting HTTPS blocking.</font></b><br/><span style=\"color:red;\">Note: The device must use this router's DNS service for it to take effect.</span><br/>Supports full domain names (e.g., example.com) or wildcards (e.g., *.example.com). <b>Separate multiple domains with commas.</b> Leaving MAC blank means restricting all machines.<br/><span style=\"color:orange;\">⚠ IPv6 fallback: when a MAC is specified, all of its IPv6 80/443 traffic (except LAN/link-local addresses) will be blocked as a safety net, even if the target domain is not in the list.</span>"
+msgstr "<b><font color=\"green\">网址过滤：通过 DNS 解析进行拦截，完美支持 HTTPS 封禁。</font></b><br/><span style=\"color:red;\">注意：设备必须使用本路由器的 DNS 服务才能生效。</span><br/>支持完整域名（如 example.com）或通配符（如 *.example.com）。<b>多个域名请用逗号隔开。</b>不指定MAC代表限制所有机器。<br/><span style=\"color:orange;\">⚠ IPv6 兜底机制：当指定了 MAC 时，该设备所有访问外网的 IPv6 80/443 流量（除了局域网/链路本地地址）将被作为安全网拦截，即使目标域名不在列表中。</span>"
+
+msgid "Web URL Filter List"
+msgstr "网址过滤列表"
+
+msgid "Current Status"
+msgstr "当前状态"
+
+msgid "Checking..."
+msgstr "检查中..."
+
+msgid "RUNNING"
+msgstr "运行中"
+
+msgid "NOT RUNNING"
+msgstr "未运行"
+
+msgid "Enable"
+msgstr "启用"
+
+msgid "Remarks"
+msgstr "备注"
+
+msgid "MAC Address <font color=\"green\">(Leave blank to restrict all clients)</font>"
+msgstr "MAC地址<font color=\"green\">(留空为限制所有客户端)</font>"
+
+msgid "Domain/URL <font color=\"green\">(Separate multiple domains with commas)</font>"
+msgstr "域名/URL <font color=\"green\">(多个域名请用逗号隔开)</font>"
+
+msgid "Time format must be HH:MM or HH:MM:SS"
+msgstr "时间格式必须为 HH:MM 或 HH:MM:SS"
+
+msgid "Start Time"
+msgstr "开始时间"
+
+msgid "End Time"
+msgstr "结束时间"
+
+msgid "Week Day"
+msgstr "设定星期"
+
+msgid "Every Day"
+msgstr "每天"
+
+msgid "Monday"
+msgstr "星期一"
+
+msgid "Tuesday"
+msgstr "星期二"
+
+msgid "Wednesday"
+msgstr "星期三"
+
+msgid "Thursday"
+msgstr "星期四"
+
+msgid "Friday"
+msgstr "星期五"
+
+msgid "Saturday"
+msgstr "星期六"
+
+msgid "Sunday"
+msgstr "星期日"
+
+msgid "Advanced Settings - Local Black/White List"
+msgstr "高级设置 - 本地黑白名单"
+
+msgid "The whitelist has the highest priority and will not be intercepted. Enter one domain per line (supports wildcards like *.baidu.com), starting with # for comments. The global black/white list always takes effect regardless of the time fields above."
+msgstr "白名单具有最高优先级，不会被拦截。每行输入一个域名（支持通配符如 *.baidu.com），以 # 开头为注释。全局黑白名单始终生效，不受上方时间字段限制。"
+
+msgid "Global Blacklist (black.list)"
+msgstr "全局黑名单 (black.list)"
+
+msgid "Global Whitelist (white.list)"
+msgstr "全局白名单 (white.list)"
+
+# ==================== wol.js ====================
+msgid "Control Plus - Wake on LAN"
+msgstr "管控 Plus - 网络唤醒"
+
+msgid "<b><font color=\"green\">Wake on LAN (WOL): Send a magic packet to wake up a device.</font></b><br/>The device must be connected via Ethernet and have WOL enabled in BIOS/OS."
+msgstr "<b><font color=\"green\">网络唤醒 (WOL)：发送魔法包来唤醒设备。</font></b><br/>设备必须通过有线连接，并在 BIOS/系统中开启网络唤醒功能。"
+
+msgid "WOL Device List"
+msgstr "唤醒设备列表"
+
+msgid "Interface"
+msgstr "发送接口"
+
+msgid "Awake"
+msgstr "唤醒"
+
+msgid "Waking up..."
+msgstr "正在唤醒..."
+
+msgid "Sending magic packet..."
+msgstr "正在发送魔法包..."
+
+msgid "Magic packet sent successfully to "
+msgstr "魔法包发送成功："
+
+msgid "Wake up failed"
+msgstr "唤醒失败"
+
+msgid "Unknown error"
+msgstr "未知错误"
+
+msgid "Close"
+msgstr "关闭"
+
+msgid "MAC address is empty!"
+msgstr "MAC地址不能为空！"

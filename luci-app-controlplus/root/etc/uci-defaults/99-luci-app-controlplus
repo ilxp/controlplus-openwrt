@@ -1,0 +1,24 @@
+#!/bin/sh
+
+# 1. 强行赋予执行权限，解决 APK 打包吞权限的 Bug
+chmod 0755 /etc/init.d/controlplus
+chmod 0755 /etc/hotplug.d/iface/99-controlplus
+
+# 2. 向 LuCI 注册 ucitrack，实现网页改了配置自动重启服务
+[ -f "/etc/config/ucitrack" ] && {
+uci -q batch <<-EOF >/dev/null
+	delete ucitrack.@controlplus[-1]
+	add ucitrack controlplus
+	set ucitrack.@controlplus[-1].init=controlplus
+	commit ucitrack
+EOF
+}
+
+# 3. 【自启与启动】启用并立刻运行服务
+/etc/init.d/controlplus enable
+/etc/init.d/controlplus restart
+
+# 4. 【刷新前端】清理 LuCI 菜单缓存
+rm -rf /tmp/luci-*
+
+exit 0
