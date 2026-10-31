@@ -21,7 +21,7 @@ jobs:
         arch:
           - x86_64
         sdk:
-          - openwrt-24.10
+          #- openwrt-24.10
           - openwrt-25.12
 
     steps:
