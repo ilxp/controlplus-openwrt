@@ -7,11 +7,6 @@ PKG_RELEASE:=1
 include $(INCLUDE_DIR)/package.mk
 
 define Build/Compile
-	$(if $(wildcard ./po/zh_Hans/controlplus.po), \
-		$(INSTALL_DIR) $(PKG_BUILD_DIR) && \
-		$(STAGING_DIR_HOST)/bin/po2lmo \
-			./po/zh_Hans/controlplus.po \
-			$(PKG_BUILD_DIR)/controlplus.zh-cn.lmo)
 endef
 
 define Package/$(PKG_NAME)
@@ -62,11 +57,6 @@ define Package/$(PKG_NAME)/install
 
 	$(INSTALL_DIR) $(1)/www/luci-static/resources/view/controlplus
 	$(CP) ./htdocs/luci-static/resources/view/controlplus/* $(1)/www/luci-static/resources/view/controlplus/
-
-	$(if $(wildcard $(PKG_BUILD_DIR)/controlplus.zh-cn.lmo), \
-		$(INSTALL_DIR) $(1)/usr/lib/lua/luci/i18n && \
-		$(INSTALL_DATA) $(PKG_BUILD_DIR)/controlplus.zh-cn.lmo \
-			$(1)/usr/lib/lua/luci/i18n/controlplus.zh-cn.lmo)
 endef
 
 define Package/$(PKG_NAME)/postrm
@@ -83,8 +73,8 @@ rm -rf /tmp/controlplus_maclist.nft
 exit 0
 endef
 
-#include $(TOPDIR)/feeds/luci/luci.mk
-# call BuildPackage - OpenWrt buildroot signature
+include $(TOPDIR)/feeds/luci/luci.mk
 
 $(eval $(call BuildPackage,$(PKG_NAME)))
 
+# call BuildPackage - OpenWrt buildroot signature
