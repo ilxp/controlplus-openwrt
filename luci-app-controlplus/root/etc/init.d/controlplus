@@ -1,0 +1,560 @@
+#!/bin/sh /etc/rc.common
+
+# ==========================================
+# Control Plus - 管控服务 (加强版)
+# ==========================================
+USE_PROCD=1
+
+START=98
+STOP=10
+
+CONFIG=controlplus
+LOG_FILE=/tmp/log/$CONFIG.log
+NFT_TABLE="inet controlplus"
+DNSMASQ_CONF="/tmp/dnsmasq.d/controlplus.conf"
+LOCAL_DIR="/etc/controlplus"
+BLACK_FILE="$LOCAL_DIR/black.list"
+WHITE_FILE="$LOCAL_DIR/white.list"
+
+# ==================== 基础通用函数 ====================
+
+elog() {
+	local d="$(date "+%Y-%m-%d %H:%M:%S")"
+	echo -e "$d: $*" >> $LOG_FILE
+}
+
+clean_log() {
+	[ -d /tmp/log ] || mkdir -p /tmp/log
+	if [ -f "$LOG_FILE" ] && [ $(wc -l < $LOG_FILE) -gt 500 ]; then
+		> $LOG_FILE
+	fi
+}
+
+format_time() {
+	echo "$1" | awk -F: '{
+		if (NF == 1) {
+			if (length($1) == 1) $1="0"$1;
+			printf "%s:00:00\n", $1;
+		} else if (NF == 2) {
+			if (length($1) == 1) $1="0"$1;
+			if (length($2) == 1) $2="0"$2;
+			printf "%s:%s:00\n", $1, $2;
+		} else if (NF == 3) {
+			if (length($1) == 1) $1="0"$1;
+			if (length($2) == 1) $2="0"$2;
+			if (length($3) == 1) $3="0"$3;
+			printf "%s:%s:%s\n", $1, $2, $3;
+		} else print $0;
+	}'
+}
+
+# 将星期字段转换为 nft meta day 匹配字符串
+build_week_match() {
+	local week="$1"
+	CO_WEEK_SAME=""
+	CO_WEEK_NEXT=""
+	if [ -z "$week" ] || [ "$week" = "*" ]; then
+		return 0
+	fi
+	local w nw
+	local s="" n=""
+	for w in $(echo "$week" | sed 's/,/ /g'); do
+		case $w in
+			1) s="$s\"monday\", ";; 2) s="$s\"tuesday\", ";; 3) s="$s\"wednesday\", ;;
+			4) s="$s\"thursday\", ";; 5) s="$s\"friday\", ";; 6) s="$s\"saturday\", ;;
+			7) s="$s\"sunday\", ;;
+		esac
+		nw=$((w + 1)); [ "$nw" -gt 7 ] && nw=1
+		case $nw in
+			1) n="$n\"monday\", ";; 2) n="$n\"tuesday\", ";; 3) n="$n\"wednesday\", ;;
+			4) n="$n\"thursday\", ";; 5) n="$n\"friday\", ";; 6) n="$n\"saturday\", ;;
+			7) n="$n\"sunday\", ;;
+		esac
+	done
+	CO_WEEK_SAME=$(echo "$s" | sed 's/, $//')
+	CO_WEEK_NEXT=$(echo "$n" | sed 's/, $//')
+}
+
+# 生成 "meta day { ... }" 字符串（为空则不加）
+day_clause() {
+	if [ -n "$1" ]; then
+		CO_DAY_CLAUSE="meta day { $1 }"
+	else
+		CO_DAY_CLAUSE=""
+	fi
+}
+
+# ==================== 初始化 Nftables 表 ====================
+init_nft_table() {
+	nft delete table $NFT_TABLE 2>/dev/null
+	nft add table $NFT_TABLE || { elog "ERROR: nft add table failed"; return 1; }
+
+	nft add chain $NFT_TABLE forward_time  { type filter hook forward priority -10 \; } || return 1
+	nft add chain $NFT_TABLE forward_proto { type filter hook forward priority -10 \; } || return 1
+	nft add chain $NFT_TABLE forward_mac   { type filter hook forward priority -10 \; } || return 1
+
+	nft add set $NFT_TABLE mac_whitelist { type ether_addr\; } || return 1
+	nft add set $NFT_TABLE mac_blacklist { type ether_addr\; } || return 1
+
+	local controlmode=$(uci -q get $CONFIG.@basic[0].control_mode)
+	if [ "$controlmode" = "1" ]; then
+		nft add chain $NFT_TABLE input_time { type filter hook input priority -10 \; } || return 1
+	fi
+	return 0
+}
+
+# ==================== 时间管控 ====================
+build_time_rules() {
+	local ids=$(uci show $CONFIG | grep "=time$" | cut -d'.' -f2 | cut -d'=' -f1)
+	local rc=0
+
+	for i in $ids; do
+		local enable=$(uci -q get $CONFIG.$i.enable)
+		[ "$enable" = "0" ] && continue
+
+		local mac=$(uci -q get $CONFIG.$i.mac)
+		[ -n "$mac" ] && mac=$(echo "$mac" | tr 'A-Z' 'a-z')
+
+		local timestart=$(uci -q get $CONFIG.$i.timestart)
+		local timeend=$(uci -q get $CONFIG.$i.timeend)
+		local week=$(uci -q get $CONFIG.$i.week)
+		local controlmode=$(uci -q get $CONFIG.@basic[0].control_mode)
+
+		[ -n "$timestart" ] && timestart=$(format_time "$timestart")
+		[ -n "$timeend" ]   && timeend=$(format_time "$timeend")
+		[ "$timeend" = "00:00:00" ] && timeend="23:59:59"
+
+		build_week_match "$week"
+
+		local base_same=""; [ -n "$mac" ] && base_same="ether saddr $mac"
+		day_clause "$CO_WEEK_SAME"; [ -n "$CO_DAY_CLAUSE" ] && base_same="$base_same $CO_DAY_CLAUSE"
+		local base_next=""; [ -n "$mac" ] && base_next="ether saddr $mac"
+		day_clause "$CO_WEEK_NEXT"; [ -n "$CO_DAY_CLAUSE" ] && base_next="$base_next $CO_DAY_CLAUSE"
+
+		if [ -n "$timestart" ] && [ -n "$timeend" ] && [ "$timestart" != "$timeend" ]; then
+			local is_cross=$(awk -v s="$timestart" -v e="$timeend" 'BEGIN {print (s > e)}')
+			if [ "$is_cross" = "1" ]; then
+				local rule1="$base_same meta hour \"$timestart\"-\"23:59:59\""
+				local out1=$(echo "add rule $NFT_TABLE forward_time $rule1 counter reject" | nft -f - 2>&1)
+				[ -n "$out1" ] && { elog "ERROR time rule (p1): $out1"; rc=1; }
+				[ "$controlmode" = "1" ] && echo "add rule $NFT_TABLE input_time $rule1 counter reject" | nft -f - 2>/dev/null
+
+				local rule2="$base_next meta hour \"00:00:00\"-\"$timeend\""
+				local out2=$(echo "add rule $NFT_TABLE forward_time $rule2 counter reject" | nft -f - 2>&1)
+				[ -n "$out2" ] && { elog "ERROR time rule (p2): $out2"; rc=1; }
+				[ "$controlmode" = "1" ] && echo "add rule $NFT_TABLE input_time $rule2 counter reject" | nft -f - 2>/dev/null
+			else
+				local rule="$base_same meta hour \"$timestart\"-\"$timeend\""
+				local out=$(echo "add rule $NFT_TABLE forward_time $rule counter reject" | nft -f - 2>&1)
+				[ -n "$out" ] && { elog "ERROR time rule: $out"; rc=1; }
+				[ "$controlmode" = "1" ] && echo "add rule $NFT_TABLE input_time $rule counter reject" | nft -f - 2>/dev/null
+			fi
+		else
+			if [ -n "$base_same" ]; then
+				local out=$(echo "add rule $NFT_TABLE forward_time $base_same counter reject" | nft -f - 2>&1)
+				[ -n "$out" ] && { elog "ERROR time rule (all-day): $out"; rc=1; }
+				[ "$controlmode" = "1" ] && echo "add rule $NFT_TABLE input_time $base_same counter reject" | nft -f - 2>/dev/null
+			fi
+		fi
+	done
+	return $rc
+}
+
+# ==================== 协议管控 ====================
+build_protocol_rules() {
+	local ids=$(uci show $CONFIG | grep "=protocol$" | cut -d'.' -f2 | cut -d'=' -f1)
+	local rc=0
+
+	for i in $ids; do
+		local enable=$(uci -q get $CONFIG.$i.enable)
+		[ "$enable" = "0" ] && continue
+
+		local mac=$(uci -q get $CONFIG.$i.mac)
+		[ -n "$mac" ] && mac=$(echo "$mac" | tr 'A-Z' 'a-z')
+
+		local proto=$(uci -q get $CONFIG.$i.proto)
+		local sport=$(uci -q get $CONFIG.$i.ports)
+		local dport=$(uci -q get $CONFIG.$i.portd)
+		local timestart=$(uci -q get $CONFIG.$i.timestart)
+		local timeend=$(uci -q get $CONFIG.$i.timeend)
+		local week=$(uci -q get $CONFIG.$i.week)
+
+		[ -n "$timestart" ] && timestart=$(format_time "$timestart")
+		[ -n "$timeend" ]   && timeend=$(format_time "$timeend")
+		[ "$timeend" = "00:00:00" ] && timeend="23:59:59"
+
+		local sp_tmp=$(echo "$sport" | tr -d ' \t' | tr ':' '-' | sed 's/,/, /g')
+		local dp_tmp=$(echo "$dport" | tr -d ' \t' | tr ':' '-' | sed 's/,/, /g')
+
+		local proto_rule=""
+		if [ "$proto" = "tcp" ] || [ "$proto" = "udp" ]; then
+			[ -n "$sport" ] && proto_rule="$proto_rule $proto sport { $sp_tmp }"
+			[ -n "$dport" ] && proto_rule="$proto_rule $proto dport { $dp_tmp }"
+			[ -z "$sport" ] && [ -z "$dport" ] && proto_rule="$proto_rule meta l4proto $proto"
+		elif [ "$proto" = "both" ]; then
+			if [ -n "$sport" ] || [ -n "$dport" ]; then
+				proto_rule="meta l4proto { tcp, udp }"
+				[ -n "$sport" ] && proto_rule="$proto_rule th sport { $sp_tmp }"
+				[ -n "$dport" ] && proto_rule="$proto_rule th dport { $dp_tmp }"
+			else
+				proto_rule="meta l4proto { tcp, udp }"
+			fi
+		elif [ "$proto" = "icmp" ]; then
+			proto_rule="$proto_rule meta l4proto { icmp, ipv6-icmp }"
+		fi
+		[ -z "$proto_rule" ] && continue
+
+		build_week_match "$week"
+
+		local base_same=""; [ -n "$mac" ] && base_same="ether saddr $mac"
+		day_clause "$CO_WEEK_SAME"; [ -n "$CO_DAY_CLAUSE" ] && base_same="$base_same $CO_DAY_CLAUSE"
+		local base_next=""; [ -n "$mac" ] && base_next="ether saddr $mac"
+		day_clause "$CO_WEEK_NEXT"; [ -n "$CO_DAY_CLAUSE" ] && base_next="$base_next $CO_DAY_CLAUSE"
+
+		if [ -n "$timestart" ] && [ -n "$timeend" ] && [ "$timestart" != "$timeend" ]; then
+			local is_cross=$(awk -v s="$timestart" -v e="$timeend" 'BEGIN {print (s > e)}')
+			if [ "$is_cross" = "1" ]; then
+				local rule1="$base_same meta hour \"$timestart\"-\"23:59:59\" $proto_rule"
+				local out1=$(echo "add rule $NFT_TABLE forward_proto $rule1 counter reject" | nft -f - 2>&1)
+				[ -n "$out1" ] && { elog "ERROR proto (p1): $out1"; rc=1; }
+				local rule2="$base_next meta hour \"00:00:00\"-\"$timeend\" $proto_rule"
+				local out2=$(echo "add rule $NFT_TABLE forward_proto $rule2 counter reject" | nft -f - 2>&1)
+				[ -n "$out2" ] && { elog "ERROR proto (p2): $out2"; rc=1; }
+			else
+				local rule="$base_same meta hour \"$timestart\"-\"$timeend\" $proto_rule"
+				local out=$(echo "add rule $NFT_TABLE forward_proto $rule counter reject" | nft -f - 2>&1)
+				[ -n "$out" ] && { elog "ERROR proto: $out"; rc=1; }
+			fi
+		else
+			local rule="$base_same $proto_rule"
+			local out=$(echo "add rule $NFT_TABLE forward_proto $rule counter reject" | nft -f - 2>&1)
+			[ -n "$out" ] && { elog "ERROR proto: $out"; rc=1; }
+		fi
+	done
+	return $rc
+}
+
+# ==================== 网址管控 ====================
+build_weburl_rules() {
+	mkdir -p /tmp/dnsmasq.d
+	echo "# Control Plus dnsmasq weburl configs" > $DNSMASQ_CONF
+
+	local ids=$(uci show $CONFIG | grep "=weburl$" | cut -d'.' -f2 | cut -d'=' -f1)
+	for i in $ids; do
+		local enable=$(uci -q get $CONFIG.$i.enable)
+		[ "$enable" = "0" ] && continue
+
+		local word=$(uci -q get $CONFIG.$i.word)
+		[ -z "$word" ] && continue
+
+		# 兼容中文逗号，并替换为空格
+		local clean_words=$(echo "$word" | sed 's/，/ /g' | tr ',' ' ' | tr -s ' ')
+		local dnsmasq_domains=""
+		local has_valid_word=0
+		
+		for dw in $clean_words; do
+			[ -z "$dw" ] && continue
+			# 剔除前面的通配符 * 和前导点 .
+			dw=$(echo "$dw" | sed 's/^\*\.//; s/^\*//; s/^\.//')
+			[ -z "$dw" ] && continue
+			
+			if [ -f "$WHITE_FILE" ] && grep -q "^${dw}$" "$WHITE_FILE"; then continue; fi
+			dnsmasq_domains="$dnsmasq_domains$dw/"
+			has_valid_word=1
+		done
+		
+		[ "$has_valid_word" = "0" ] && continue
+		
+		# 去掉末尾的斜杠
+		dnsmasq_domains=$(echo "$dnsmasq_domains" | sed 's/\/$//')
+
+		# 核心：直接告诉客户端，这个域名解析结果是 0.0.0.0
+		echo "address=/$dnsmasq_domains/0.0.0.0" >> $DNSMASQ_CONF
+		echo "address=/$dnsmasq_domains/::" >> $DNSMASQ_CONF
+	done
+
+	# 全局黑名单（black.list）
+	if [ -f "$BLACK_FILE" ]; then
+		grep -v '^#' "$BLACK_FILE" | grep -v '^$' | while read domain; do
+			domain=$(echo "$domain" | tr -d '\r' | sed 's/^[ \t]*//;s/[ \t]*$//')
+			[ -z "$domain" ] && continue
+			if [ -f "$WHITE_FILE" ] && grep -q "^${domain}$" "$WHITE_FILE"; then continue; fi
+			local clean_domain=$(echo "$domain" | sed 's/^\*\.//; s/^\*//')
+			[ -z "$clean_domain" ] && continue
+			echo "address=/$clean_domain/0.0.0.0" >> $DNSMASQ_CONF
+			echo "address=/$clean_domain/::" >> $DNSMASQ_CONF
+		done
+	fi
+	
+	return 0
+}
+
+# ==================== MAC 限速管控 (tc + htb) ====================
+build_qos_rules() {
+	local lan_dev=$(uci -q get network.lan.device)
+	[ -z "$lan_dev" ] && lan_dev="br-lan"
+	
+	# 【核心修复 1】使用专属的虚拟网卡名，避免与 IQOS 抢占 ifb0
+	local IFB_DEV="ifb10"
+
+	if ! ip link show "$lan_dev" >/dev/null 2>&1; then
+		elog "FATAL: QoS aborted. LAN device $lan_dev not found."
+		return 1
+	fi
+
+	modprobe ifb 2>/dev/null
+	modprobe sch_htb 2>/dev/null 
+	modprobe act_mirred 2>/dev/null
+	modprobe cls_flower 2>/dev/null
+
+	# 尝试创建 ifb10 虚拟网卡，失败则说明缺 kmod-ifb
+	if ! ip link add "$IFB_DEV" type ifb 2>/dev/null; then
+		if ! ip link show "$IFB_DEV" >/dev/null 2>&1; then
+			elog "FATAL: QoS aborted. Failed to create $IFB_DEV interface (Missing kmod-ifb?)"
+			return 1
+		fi
+	fi
+	ip link set dev "$IFB_DEV" up 2>/dev/null
+	ip link set dev "$IFB_DEV" txqueuelen 10
+
+	# 清理旧的规则和队列
+	tc qdisc del dev "$lan_dev" root handle 1: htb 2>/dev/null
+	tc qdisc del dev "$lan_dev" handle ffff: ingress 2>/dev/null
+	tc qdisc del dev "$IFB_DEV" root handle 2: htb 2>/dev/null
+
+	# 使用 replace 覆盖系统默认的队列（如 fq_codel），避免报 File exists
+	if ! tc qdisc replace dev "$lan_dev" root handle 1: htb default 10 2>/dev/null; then
+		elog "FATAL: QoS aborted. Kernel does not support HTB qdisc (Missing kmod-sched-core?)"
+		return 1
+	fi
+
+	tc class add dev "$lan_dev" parent 1: classid 1:1 htb rate 1000mbit ceil 1000mbit
+	tc class add dev "$lan_dev" parent 1:1 classid 1:10 htb rate 1000mbit ceil 1000mbit
+
+	tc qdisc add dev "$lan_dev" handle ffff: ingress
+	# 尝试建立重定向规则（重定向到 ifb10）
+	if ! tc filter add dev "$lan_dev" parent ffff: protocol all matchall action mirred egress redirect dev "$IFB_DEV" 2>/dev/null; then
+		elog "FATAL: QoS aborted. Failed to add ingress filter (Missing act_mirred?)"
+		return 1
+	fi
+
+	tc qdisc add dev "$IFB_DEV" root handle 2: htb default 10
+	tc class add dev "$IFB_DEV" parent 2: classid 2:1 htb rate 1000mbit ceil 1000mbit
+	tc class add dev "$IFB_DEV" parent 2:1 classid 2:10 htb rate 1000mbit ceil 1000mbit
+
+	local ids=$(uci show $CONFIG | grep "=qos$" | cut -d'.' -f2 | cut -d'=' -f1)
+	local class_id=20
+
+	for i in $ids; do
+		local enable=$(uci -q get $CONFIG.$i.enable)
+		[ "$enable" = "0" ] && continue
+
+		local mac=$(uci -q get $CONFIG.$i.mac)
+		local down=$(uci -q get $CONFIG.$i.down)
+		local up=$(uci -q get $CONFIG.$i.up)
+
+		[ -z "$mac" ] && continue
+		mac=$(echo "$mac" | tr 'A-Z' 'a-z')
+
+		if [ -n "$down" ] && [ "$down" -gt 0 ]; then
+			local down_kbit=$((down * 8))
+			local burst_bytes=15000
+			
+			tc class add dev "$lan_dev" parent 1:1 classid 1:$class_id htb rate ${down_kbit}kbit ceil ${down_kbit}kbit burst ${burst_bytes}b cburst ${burst_bytes}b prio 1
+			tc filter add dev "$lan_dev" protocol all parent 1: prio 1 flower dst_mac $mac flowid 1:$class_id
+			tc qdisc add dev "$lan_dev" parent 1:$class_id handle $class_id: pfifo limit 10
+			elog "QoS(htb): MAC $mac DOWN ${down} KB/s"
+		fi
+
+		if [ -n "$up" ] && [ "$up" -gt 0 ]; then
+			local up_kbit=$((up * 8))
+			local burst_bytes=15000
+			
+			tc class add dev "$IFB_DEV" parent 2:1 classid 2:$class_id htb rate ${up_kbit}kbit ceil ${up_kbit}kbit burst ${burst_bytes}b cburst ${burst_bytes}b prio 1
+			tc filter add dev "$IFB_DEV" protocol all parent 2: prio 1 flower src_mac $mac flowid 2:$class_id
+			tc qdisc add dev "$IFB_DEV" parent 2:$class_id handle $class_id: pfifo limit 10
+			elog "QoS(htb): MAC $mac UP ${up} KB/s"
+		fi
+
+		class_id=$((class_id + 1))
+	done
+	return 0
+}
+
+# ==================== MAC 黑白名单 ====================
+build_maclist_rules() {
+	local mode=$(uci -q get $CONFIG.@basic[0].maclist_mode)
+	local ids=$(uci show $CONFIG | grep "=maclist$" | cut -d'.' -f2 | cut -d'=' -f1)
+
+	local nft_script="/tmp/controlone_maclist.nft"
+	echo "" > $nft_script
+
+	local has_valid_mac=0
+	local mac_list=""
+
+	for i in $ids; do
+		local enable=$(uci -q get $CONFIG.$i.enable)
+		[ "$enable" = "0" ] && continue
+
+		local mac=$(uci -q get $CONFIG.$i.mac)
+		[ -z "$mac" ] && continue
+
+		mac=$(echo "$mac" | tr 'A-Z' 'a-z')
+		has_valid_mac=1
+		mac_list="$mac_list $mac"
+	done
+
+	if [ "$mode" = "white" ]; then
+		if [ "$has_valid_mac" = "0" ]; then
+			echo "add rule $NFT_TABLE forward_mac counter reject" >> $nft_script
+			elog "MAC Access: WHITELIST mode but list is empty. Blocking ALL."
+		else
+			echo "flush set $NFT_TABLE mac_whitelist" >> $nft_script
+			for m in $mac_list; do
+				echo "add element $NFT_TABLE mac_whitelist { $m }" >> $nft_script
+			done
+
+			echo "add rule $NFT_TABLE forward_mac ether saddr @mac_whitelist counter accept" >> $nft_script
+			echo "add rule $NFT_TABLE forward_mac ip daddr { 192.168.0.0/16, 10.0.0.0/8, 172.16.0.0/12 } counter accept" >> $nft_script
+			echo "add rule $NFT_TABLE forward_mac ip6 daddr { fc00::/7, fe80::/10 } counter accept" >> $nft_script
+			echo "add rule $NFT_TABLE forward_mac counter reject" >> $nft_script
+
+			elog "MAC Access: WHITELIST mode enabled. $(echo $mac_list | wc -w) devices allowed."
+		fi
+	else
+		if [ "$has_valid_mac" = "1" ]; then
+			echo "flush set $NFT_TABLE mac_blacklist" >> $nft_script
+			for m in $mac_list; do
+				echo "add element $NFT_TABLE mac_blacklist { $m }" >> $nft_script
+			done
+
+			echo "add rule $NFT_TABLE forward_mac ether saddr @mac_blacklist ip daddr { 192.168.0.0/16, 10.0.0.0/8, 172.16.0.0/12 } counter accept" >> $nft_script
+			echo "add rule $NFT_TABLE forward_mac ether saddr @mac_blacklist ip6 daddr { fc00::/7, fe80::/10 } counter accept" >> $nft_script
+			echo "add rule $NFT_TABLE forward_mac ether saddr @mac_blacklist counter reject" >> $nft_script
+
+			elog "MAC Access: BLACKLIST mode enabled. $(echo $mac_list | wc -w) devices blocked."
+		fi
+	fi
+
+	local rc=0
+	if [ -s $nft_script ]; then
+		nft -f $nft_script || { elog "ERROR: Failed to apply MAC access rules."; rc=1; }
+	fi
+	rm -f $nft_script
+	return $rc
+}
+
+# ==================== 启动与停止 ====================
+start_service() {
+	[ -d /tmp/log ] || mkdir -p /tmp/log
+	[ -d "$LOCAL_DIR" ] || mkdir -p "$LOCAL_DIR"
+	[ -f "$BLACK_FILE" ] || touch "$BLACK_FILE"
+	[ -f "$WHITE_FILE" ] || touch "$WHITE_FILE"
+
+	local need_dns_restart=0
+
+	# 1. 自动确保 dnsmasq 加载了配置目录
+	if [ "$(uci -q get dhcp.@dnsmasq[0].confdir)" != "/tmp/dnsmasq.d" ]; then
+		local current_confdir=$(uci -q get dhcp.@dnsmasq[0].confdir)
+		if [ -z "$current_confdir" ]; then
+			uci set dhcp.@dnsmasq[0].confdir='/tmp/dnsmasq.d'
+		elif ! echo "$current_confdir" | grep -q "/tmp/dnsmasq.d"; then
+			uci set dhcp.@dnsmasq[0].confdir="$current_confdir /tmp/dnsmasq.d"
+		fi
+		uci commit dhcp
+		need_dns_restart=1
+	fi
+
+	# 2. 初始化 nftables
+	if ! init_nft_table; then
+		elog "FATAL: failed to init nft table"
+		rm -f /tmp/controlplus.*.running
+		return 1
+	fi
+
+	local time_en=$(uci -q get $CONFIG.@basic[0].time_enabled)
+	local proto_en=$(uci -q get $CONFIG.@basic[0].proto_enabled)
+	local weburl_en=$(uci -q get $CONFIG.@basic[0].weburl_enabled)
+	local qos_en=$(uci -q get $CONFIG.@basic[0].qos_enabled)
+	local maclist_en=$(uci -q get $CONFIG.@basic[0].maclist_enabled)
+
+	# 3. 时间管控
+	rm -f /tmp/controlplus.time.running
+	if [ "$time_en" = "1" ]; then
+		build_time_rules && touch /tmp/controlplus.time.running
+	fi
+
+	# 4. 协议管控
+	rm -f /tmp/controlplus.proto.running
+	if [ "$proto_en" = "1" ]; then
+		build_protocol_rules && touch /tmp/controlplus.proto.running
+	fi
+	
+	# 5. 网址管控
+	rm -f /tmp/controlplus.weburl.running
+	if [ "$weburl_en" = "1" ]; then
+		build_weburl_rules && touch /tmp/controlplus.weburl.running
+		need_dns_restart=1  # 开启网址过滤必须重启清缓存
+	else
+		if [ -f "$DNSMASQ_CONF" ]; then
+			rm -f $DNSMASQ_CONF
+			need_dns_restart=1  # 关闭网址过滤（发现旧配置存在）必须重启解除污染
+		fi
+	fi
+
+	# 6. 限速管控
+	rm -f /tmp/controlplus.qos.running
+	if [ "$qos_en" = "1" ]; then
+		build_qos_rules && touch /tmp/controlplus.qos.running
+	fi
+
+	# 7. MAC 黑白名单
+	rm -f /tmp/controlplus.maclist.running
+	if [ "$maclist_en" = "1" ]; then
+		build_maclist_rules && touch /tmp/controlplus.maclist.running
+	fi
+
+	# 8. 【稳妥】只在需要的时候，且所有规则都建好后，统一重启一次 dnsmasq
+	if [ "$need_dns_restart" = "1" ]; then
+		/etc/init.d/dnsmasq restart 2>/dev/null
+		sleep 1  # 等待 1 秒让 dnsmasq 完全启动并绑定端口
+	fi
+
+	clean_log
+	return 0
+}
+
+stop_service() {
+	nft delete table $NFT_TABLE 2>/dev/null
+	rm -f /tmp/controlplus.*.running
+
+	# 只有当旧的配置文件存在时才需要重启 dnsmasq，避免无意义的断网
+	if [ -f "$DNSMASQ_CONF" ]; then
+		rm -f $DNSMASQ_CONF
+		/etc/init.d/dnsmasq restart 2>/dev/null
+		sleep 1
+	fi
+
+	local lan_dev=$(uci -q get network.lan.device)
+	[ -z "$lan_dev" ] && lan_dev="br-lan"
+
+	tc qdisc del dev "$lan_dev" root handle 1: htb 2>/dev/null
+	tc qdisc del dev "$lan_dev" ingress 2>/dev/null
+	tc qdisc del dev ifb10 root handle 2: htb 2>/dev/null
+	ip link set dev ifb10 down 2>/dev/null
+	ip link del  dev ifb10 2>/dev/null
+}
+
+reload_service() {
+	stop_service
+	start_service
+}
+
+boot() {
+	start_service
+}
+
+service_triggers() {
+	procd_add_reload_trigger "controlplus"
+	procd_add_reload_trigger "firewall"
+}

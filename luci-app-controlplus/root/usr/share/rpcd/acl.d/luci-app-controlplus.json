@@ -1,0 +1,28 @@
+{
+    "luci-app-controlplus": {
+        "description": "Grant access to Control Plus",
+        "read": {
+            "uci": [ "controlplus" ],
+            "file": {
+                "/etc/controlplus/black.list": [ "read" ],
+                "/etc/controlplus/white.list": [ "read" ],
+                "/tmp/controlplus.time.running": [ "read" ],
+                "/tmp/controlplus.proto.running": [ "read" ],
+                "/tmp/controlplus.weburl.running": [ "read" ],
+                "/tmp/controlplus.qos.running": [ "read" ],
+                "/tmp/controlplus.maclist.running": [ "read" ]
+            },
+            "exec": {
+                "/etc/init.d/controlplus": [ "restart" ],
+				"/usr/bin/etherwake": [ "exec" ]
+            }
+        },
+        "write": {
+            "uci": [ "controlplus" ],
+            "file": {
+                "/etc/controlplus/black.list": [ "write" ],
+                "/etc/controlplus/white.list": [ "write" ]
+            }
+        }
+    }
+}

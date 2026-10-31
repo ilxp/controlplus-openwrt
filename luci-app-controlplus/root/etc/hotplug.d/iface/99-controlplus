@@ -1,0 +1,4 @@
+#!/bin/sh
+[ "$ACTION" = "ifup" ] || [ "$ACTION" = "ifupdate" ] || exit 0
+[ -x /etc/init.d/controlplus ] && /etc/init.d/controlplus restart &
+exit 0
